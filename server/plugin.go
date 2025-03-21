@@ -31,7 +31,35 @@ func (p *Plugin) OnActivate() error {
 		return err
 	}
 	
+	// Ensure the bot account exists
+	botID, err := p.ensureBotExists()
+	if err != nil {
+		return err
+	}
+	
+	// Store the bot ID in the plugin's key-value store
+	if err := p.API.KVSet("bot_id", []byte(botID)); err != nil {
+		return err
+	}
+	
 	return nil
+}
+
+// ensureBotExists makes sure the ApprovalBot exists
+func (p *Plugin) ensureBotExists() (string, error) {
+	bot := &model.Bot{
+		Username:    "approvalbot",
+		DisplayName: "ApprovalBot",
+		Description: "A bot account for the Approver plugin",
+	}
+	
+	// Check if the bot already exists
+	botID, appErr := p.API.EnsureBotUser(bot)
+	if appErr != nil {
+		return "", appErr
+	}
+	
+	return botID, nil
 }
 
 // ExecuteCommand handles the /approver slash command
@@ -132,20 +160,41 @@ func (p *Plugin) handleSubmitDialog(request *model.SubmitDialogRequest) (*model.
 	return &model.SubmitDialogResponse{}, nil
 }
 
-// sendDirectMessage sends a direct message from one user to another
+// sendDirectMessage sends a direct message from the bot to a user
 func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description string) *model.AppError {
-	// Get the direct channel between the users
-	channel, appErr := p.API.GetDirectChannel(fromUserId, toUserId)
+	// Get the bot ID from the KV store
+	botIDBytes, appErr := p.API.KVGet("bot_id")
+	if appErr != nil {
+		return appErr
+	}
+	
+	if botIDBytes == nil {
+		return &model.AppError{
+			Message: "Bot ID not found in KV store",
+		}
+	}
+	
+	botID := string(botIDBytes)
+	
+	// Get the direct channel between the bot and the user
+	channel, appErr := p.API.GetDirectChannel(botID, toUserId)
+	if appErr != nil {
+		return appErr
+	}
+	
+	// Get information about the requester
+	requester, appErr := p.API.GetUser(fromUserId)
 	if appErr != nil {
 		return appErr
 	}
 	
 	// Create the message with formatted content
-	message := fmt.Sprintf("**%s**\n\n%s", title, description)
+	message := fmt.Sprintf("**New Approval Request from @%s**\n\n**%s**\n\n%s", 
+		requester.Username, title, description)
 	
 	// Create and send the post
 	post := &model.Post{
-		UserId:    fromUserId,
+		UserId:    botID,
 		ChannelId: channel.Id,
 		Message:   message,
 	}
