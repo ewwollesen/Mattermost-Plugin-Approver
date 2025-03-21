@@ -107,20 +107,8 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 		return "", err
 	}
 	
-	// Update the bot's properties to make it look like a bot
-	patch := &model.UserPatch{
-		NotifyProps: &model.StringMap{
-			"email":         "false",
-			"desktop":       "none",
-			"desktop_sound": "false",
-			"mention_keys":  "",
-		},
-	}
-	
-	_, err = p.API.PatchUser(createdBot.Id, patch)
-	if err != nil {
-		return "", err
-	}
+	// We can't update the bot's properties in this API version
+	// Just return the created bot ID
 	
 	return createdBot.Id, nil
 }
