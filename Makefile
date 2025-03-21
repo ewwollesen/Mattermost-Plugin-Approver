@@ -16,7 +16,8 @@ clean:
 package: build
 	mkdir -p dist
 	cp $(MANIFEST_FILE) dist/
-	cd server && cp -r dist ../dist/
-	cd dist && tar -czf approver-plugin.tar.gz plugin.json dist
+	mkdir -p dist/server/dist
+	cp server/dist/* dist/server/dist/
+	cd dist && tar -czf ../approver-plugin.tar.gz *
 
 .DEFAULT_GOAL := build
