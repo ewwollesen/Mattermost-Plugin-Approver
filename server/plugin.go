@@ -30,6 +30,8 @@ func (p *Plugin) OnActivate() error {
 	}
 
 	// Register the API endpoints for handling form submissions
+	p.API.RegisterInteractiveDialogHandler("newApprovalRequest", p.handleSubmitDialog)
+	
 	return nil
 }
 
@@ -104,6 +106,53 @@ func (p *Plugin) handleNewCommand(args *model.CommandArgs) (*model.CommandRespon
 	}
 
 	return &model.CommandResponse{}, nil
+}
+
+// handleSubmitDialog processes the submitted dialog
+func (p *Plugin) handleSubmitDialog(request *model.SubmitDialogRequest) (*model.SubmitDialogResponse, *model.AppError) {
+	// Extract form values
+	title := request.Submission["title"].(string)
+	description := request.Submission["description"].(string)
+	approverUserId := request.Submission["approver"].(string)
+	
+	// Send a direct message to the approver
+	err := p.sendDirectMessage(request.UserId, approverUserId, title, description)
+	if err != nil {
+		return &model.SubmitDialogResponse{
+			Error: "Failed to send message to approver: " + err.Error(),
+		}, nil
+	}
+	
+	// Send confirmation to the user who submitted the request
+	p.API.SendEphemeralPost(request.ChannelId, &model.Post{
+		UserId:    request.UserId,
+		ChannelId: request.ChannelId,
+		Message:   "Your approval request has been sent to the approver.",
+	})
+	
+	return &model.SubmitDialogResponse{}, nil
+}
+
+// sendDirectMessage sends a direct message from one user to another
+func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description string) *model.AppError {
+	// Get the direct channel between the users
+	channel, appErr := p.API.GetDirectChannel(fromUserId, toUserId)
+	if appErr != nil {
+		return appErr
+	}
+	
+	// Create the message with formatted content
+	message := fmt.Sprintf("**%s**\n\n%s", title, description)
+	
+	// Create and send the post
+	post := &model.Post{
+		UserId:    fromUserId,
+		ChannelId: channel.Id,
+		Message:   message,
+	}
+	
+	_, appErr = p.API.CreatePost(post)
+	return appErr
 }
 
 func main() {
