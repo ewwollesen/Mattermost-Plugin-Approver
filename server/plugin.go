@@ -13,6 +13,8 @@ import (
 const (
 	botUsername = "approvalbot"
 	botDisplayName = "ApprovalBot"
+	botDescription = "A bot for the Approver plugin"
+	botEmail = "approvalbot@example.com"
 )
 
 // Plugin implements the interface expected by the Mattermost server to communicate between the server and plugin processes.
@@ -36,9 +38,68 @@ func (p *Plugin) OnActivate() error {
 		return err
 	}
 	
-	// No additional setup needed
+	// Create or get the bot user
+	botUserID, err := p.ensureBotUser()
+	if err != nil {
+		return fmt.Errorf("failed to ensure bot user: %w", err)
+	}
+	
+	// Store the bot user ID in the KV store
+	if err := p.API.KVSet("bot_user_id", []byte(botUserID)); err != nil {
+		return fmt.Errorf("failed to store bot user ID: %w", err)
+	}
 	
 	return nil
+}
+
+// ensureBotUser creates a bot user if it doesn't exist
+func (p *Plugin) ensureBotUser() (string, *model.AppError) {
+	// Check if we already have a bot user ID stored
+	botUserIDBytes, err := p.API.KVGet("bot_user_id")
+	if err != nil {
+		return "", err
+	}
+	
+	// If we have a bot user ID, check if the user still exists
+	if botUserIDBytes != nil {
+		botUserID := string(botUserIDBytes)
+		user, err := p.API.GetUser(botUserID)
+		if err == nil && user != nil {
+			return botUserID, nil
+		}
+	}
+	
+	// Get the first team
+	teams, err := p.API.GetTeams()
+	if err != nil {
+		return "", err
+	}
+	
+	if len(teams) == 0 {
+		return "", &model.AppError{Message: "No teams found"}
+	}
+	
+	// Create the bot user
+	bot := &model.User{
+		Username:    botUsername,
+		DisplayName: botDisplayName,
+		Email:       botEmail,
+		Password:    model.NewId(),
+		Roles:       model.SYSTEM_USER_ROLE_ID,
+	}
+	
+	createdBot, err := p.API.CreateUser(bot)
+	if err != nil {
+		return "", err
+	}
+	
+	// Add bot to the first team
+	_, err = p.API.CreateTeamMember(teams[0].Id, createdBot.Id)
+	if err != nil {
+		return "", err
+	}
+	
+	return createdBot.Id, nil
 }
 
 // ExecuteCommand handles the /approver slash command
@@ -139,10 +200,22 @@ func (p *Plugin) handleSubmitDialog(request *model.SubmitDialogRequest) (*model.
 	return &model.SubmitDialogResponse{}, nil
 }
 
-// sendDirectMessage sends a direct message from one user to another
+// sendDirectMessage sends a direct message from the bot to a user
 func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description string) *model.AppError {
-	// Get the direct channel between the users
-	channel, appErr := p.API.GetDirectChannel(fromUserId, toUserId)
+	// Get the bot user ID
+	botUserIDBytes, appErr := p.API.KVGet("bot_user_id")
+	if appErr != nil {
+		return appErr
+	}
+	
+	if botUserIDBytes == nil {
+		return &model.AppError{Message: "Bot user ID not found"}
+	}
+	
+	botUserID := string(botUserIDBytes)
+	
+	// Get the direct channel between the bot and the user
+	channel, appErr := p.API.GetDirectChannel(botUserID, toUserId)
 	if appErr != nil {
 		return appErr
 	}
@@ -153,13 +226,13 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 		return appErr
 	}
 	
-	// Create the message with formatted content to look like it's from a bot
-	message := fmt.Sprintf("#### :robot: %s\n\n**New Approval Request from @%s**\n\n**%s**\n\n%s", 
-		botDisplayName, requester.Username, title, description)
+	// Create the message with formatted content
+	message := fmt.Sprintf("**New Approval Request from @%s**\n\n**%s**\n\n%s", 
+		requester.Username, title, description)
 	
-	// Create and send the post as the user who initiated the request
+	// Create and send the post as the bot
 	post := &model.Post{
-		UserId:    fromUserId,
+		UserId:    botUserID,
 		ChannelId: channel.Id,
 		Message:   message,
 		Props: model.StringInterface{
