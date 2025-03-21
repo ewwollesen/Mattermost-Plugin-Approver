@@ -14,10 +14,11 @@ clean:
 	rm -rf server/dist
 
 package: build
+	rm -rf dist
 	mkdir -p dist
 	cp $(MANIFEST_FILE) dist/
 	mkdir -p dist/server/dist
 	cp server/dist/* dist/server/dist/
-	cd dist && tar -czf ../approver-plugin.tar.gz *
+	cd dist && tar -czf ../approver-plugin.tar.gz .
 
 .DEFAULT_GOAL := build
