@@ -70,10 +70,10 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 	}
 	
 	// Try to find an existing user with the bot username
-	user, _ := p.API.GetUserByUsername(botUsername)
-	if user != nil {
+	existingBot, _ := p.API.GetUserByUsername(botUsername)
+	if existingBot != nil {
 		// User already exists, store its ID and return
-		return user.Id, nil
+		return existingBot.Id, nil
 	}
 	
 	// Get the first team
@@ -86,12 +86,15 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 		return "", &model.AppError{Message: "No teams found"}
 	}
 	
-	// Create the bot user with a unique username
-	uniqueUsername := botUsername + model.NewId()[:5]
+	// Generate a unique username to avoid conflicts
+	uniqueUsername := botUsername + "_" + model.NewId()[:5]
+	uniqueEmail := uniqueUsername + "@example.com"
+	
+	// Create the bot user with the unique username
 	bot := &model.User{
 		Username:    uniqueUsername,
 		FirstName:   botDisplayName,
-		Email:       model.NewId() + "@example.com", // Unique email
+		Email:       uniqueEmail,
 		Password:    model.NewId(),
 		Roles:       model.SYSTEM_USER_ROLE_ID,
 	}
@@ -106,9 +109,6 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 	if err != nil {
 		return "", err
 	}
-	
-	// We can't update the bot's properties in this API version
-	// Just return the created bot ID
 	
 	return createdBot.Id, nil
 }
