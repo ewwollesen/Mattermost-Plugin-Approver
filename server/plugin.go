@@ -58,42 +58,42 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 
 // handleNewCommand opens a modal for creating a new approval request
 func (p *Plugin) handleNewCommand(args *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
-	// Create a new modal
-	modal := &model.Modal{
-		Title: "New Approval Request",
-		CallbackId: "newApprovalRequest",
+	// Create a new dialog
+	dialog := model.Dialog{
+		Title:       "New Approval Request",
+		CallbackId:  "newApprovalRequest",
 		SubmitLabel: "Submit",
-		CancelLabel: "Cancel",
+		NotifyOnCancel: true,
 		Elements: []model.DialogElement{
 			{
 				DisplayName: "Title",
 				Name:        "title",
 				Type:        "text",
 				SubType:     "text",
-				Required:    true,
+				Optional:    false,
 			},
 			{
 				DisplayName: "Description",
 				Name:        "description",
 				Type:        "text",
 				SubType:     "textarea",
-				Required:    true,
+				Optional:    false,
 			},
 			{
 				DisplayName: "Approver",
 				Name:        "approver",
 				Type:        "select",
 				DataSource:  "users",
-				Required:    true,
+				Optional:    false,
 			},
 		},
 	}
 
-	// Show the modal to the user
+	// Show the dialog to the user
 	request := model.OpenDialogRequest{
 		TriggerId: args.TriggerId,
 		URL:       fmt.Sprintf("/plugins/%s/api/v1/approvals/submit", manifest.Id),
-		Dialog:    *modal,
+		Dialog:    dialog,
 	}
 
 	if err := p.API.OpenInteractiveDialog(request); err != nil {
