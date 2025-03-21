@@ -15,13 +15,22 @@ type Plugin struct {
 
 // OnActivate is invoked when the plugin is activated.
 func (p *Plugin) OnActivate() error {
-	return p.API.RegisterCommand(&model.Command{
+	// Register the slash command
+	err := p.API.RegisterCommand(&model.Command{
 		Trigger:          "approver",
 		DisplayName:      "Approver Command",
-		Description:      "A slash command that displays a hello world message",
+		Description:      "A slash command for approval requests",
 		AutoComplete:     true,
-		AutoCompleteDesc: "Type /approver to see a hello world message",
+		AutoCompleteDesc: "Available commands: new",
+		AutoCompleteHint: "[new]",
 	})
+	
+	if err != nil {
+		return err
+	}
+
+	// Register the API endpoints for handling form submissions
+	return nil
 }
 
 // ExecuteCommand handles the /approver slash command
@@ -34,11 +43,67 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		}, nil
 	}
 
-	// Return a message that only the user can see
+	// Split the command to get arguments
+	splitCmd := strings.Fields(args.Command)
+	if len(splitCmd) > 1 && splitCmd[1] == "new" {
+		return p.handleNewCommand(args)
+	}
+
+	// Default response if no arguments or unrecognized arguments
 	return &model.CommandResponse{
 		ResponseType: model.COMMAND_RESPONSE_TYPE_EPHEMERAL,
-		Text:         "Hello, world!",
+		Text:         "Hello, world! Use '/approver new' to open the approval form.",
 	}, nil
+}
+
+// handleNewCommand opens a modal for creating a new approval request
+func (p *Plugin) handleNewCommand(args *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
+	// Create a new modal
+	modal := &model.Modal{
+		Title: "New Approval Request",
+		CallbackId: "newApprovalRequest",
+		SubmitLabel: "Submit",
+		CancelLabel: "Cancel",
+		Elements: []model.DialogElement{
+			{
+				DisplayName: "Title",
+				Name:        "title",
+				Type:        "text",
+				SubType:     "text",
+				Required:    true,
+			},
+			{
+				DisplayName: "Description",
+				Name:        "description",
+				Type:        "text",
+				SubType:     "textarea",
+				Required:    true,
+			},
+			{
+				DisplayName: "Approver",
+				Name:        "approver",
+				Type:        "select",
+				DataSource:  "users",
+				Required:    true,
+			},
+		},
+	}
+
+	// Show the modal to the user
+	request := model.OpenDialogRequest{
+		TriggerId: args.TriggerId,
+		URL:       fmt.Sprintf("/plugins/%s/api/v1/approvals/submit", manifest.Id),
+		Dialog:    *modal,
+	}
+
+	if err := p.API.OpenInteractiveDialog(request); err != nil {
+		return &model.CommandResponse{
+			ResponseType: model.COMMAND_RESPONSE_TYPE_EPHEMERAL,
+			Text:         "Error opening the dialog: " + err.Error(),
+		}, nil
+	}
+
+	return &model.CommandResponse{}, nil
 }
 
 func main() {
