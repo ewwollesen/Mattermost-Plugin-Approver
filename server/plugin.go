@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/mattermost/mattermost-server/v5/model"
@@ -28,9 +30,6 @@ func (p *Plugin) OnActivate() error {
 	if err != nil {
 		return err
 	}
-
-	// Register the API endpoints for handling form submissions
-	p.API.RegisterInteractiveDialogHandler("newApprovalRequest", p.handleSubmitDialog)
 	
 	return nil
 }
@@ -94,7 +93,7 @@ func (p *Plugin) handleNewCommand(args *model.CommandArgs) (*model.CommandRespon
 	// Show the dialog to the user
 	request := model.OpenDialogRequest{
 		TriggerId: args.TriggerId,
-		URL:       fmt.Sprintf("/plugins/%s/api/v1/approvals/submit", manifest.Id),
+		URL:       fmt.Sprintf("/plugins/%s/dialog/submit", manifest.Id),
 		Dialog:    dialog,
 	}
 
@@ -153,6 +152,56 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 	
 	_, appErr = p.API.CreatePost(post)
 	return appErr
+}
+
+// ServeHTTP handles HTTP requests to the plugin
+func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	
+	if path == "/dialog/submit" {
+		p.handleDialogSubmission(w, r)
+		return
+	}
+	
+	http.NotFound(w, r)
+}
+
+// handleDialogSubmission processes the submitted dialog
+func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) {
+	request := model.SubmitDialogRequestFromJson(r.Body)
+	if request == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	
+	// Extract form values
+	title := request.Submission["title"].(string)
+	description := request.Submission["description"].(string)
+	approverUserId := request.Submission["approver"].(string)
+	
+	// Send a direct message to the approver
+	err := p.sendDirectMessage(request.UserId, approverUserId, title, description)
+	if err != nil {
+		response := &model.SubmitDialogResponse{
+			Error: "Failed to send message to approver: " + err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+	
+	// Send confirmation to the user who submitted the request
+	p.API.SendEphemeralPost(request.ChannelId, &model.Post{
+		UserId:    request.UserId,
+		ChannelId: request.ChannelId,
+		Message:   "Your approval request has been sent to the approver.",
+	})
+	
+	response := &model.SubmitDialogResponse{}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
 }
 
 func main() {
