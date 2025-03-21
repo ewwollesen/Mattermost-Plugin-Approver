@@ -10,6 +10,11 @@ import (
 	"github.com/mattermost/mattermost-server/v5/plugin"
 )
 
+const (
+	botUsername = "approvalbot"
+	botDisplayName = "ApprovalBot"
+)
+
 // Plugin implements the interface expected by the Mattermost server to communicate between the server and plugin processes.
 type Plugin struct {
 	plugin.MattermostPlugin
@@ -29,6 +34,53 @@ func (p *Plugin) OnActivate() error {
 	
 	if err != nil {
 		return err
+	}
+	
+	// Create or get the webhook for the bot
+	botWebhookKey := "bot_webhook_id"
+	webhookIDBytes, appErr := p.API.KVGet(botWebhookKey)
+	
+	if appErr != nil {
+		return appErr
+	}
+	
+	if webhookIDBytes == nil {
+		// Create a new incoming webhook for the bot
+		teamID := ""
+		teams, appErr := p.API.GetTeams()
+		if appErr != nil {
+			return appErr
+		}
+		
+		if len(teams) > 0 {
+			teamID = teams[0].Id
+		} else {
+			return fmt.Errorf("no teams found to create webhook")
+		}
+		
+		// Find a channel to attach the webhook to (we'll only use it for DMs)
+		channels, appErr := p.API.GetChannelsForTeamForUser(teamID, "me", false)
+		if appErr != nil || len(channels) == 0 {
+			return fmt.Errorf("no channels found to create webhook")
+		}
+		
+		hook := &model.IncomingWebhook{
+			ChannelId:   channels[0].Id,
+			TeamId:      teamID,
+			DisplayName: botDisplayName,
+			Description: "Webhook for the Approver plugin",
+			Username:    botUsername,
+		}
+		
+		createdHook, appErr := p.API.CreateIncomingWebhook(hook)
+		if appErr != nil {
+			return appErr
+		}
+		
+		// Store the webhook ID
+		if err := p.API.KVSet(botWebhookKey, []byte(createdHook.Id)); err != nil {
+			return err
+		}
 	}
 	
 	return nil
@@ -132,7 +184,7 @@ func (p *Plugin) handleSubmitDialog(request *model.SubmitDialogRequest) (*model.
 	return &model.SubmitDialogResponse{}, nil
 }
 
-// sendDirectMessage sends a direct message from one user to another
+// sendDirectMessage sends a direct message from the bot to a user
 func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description string) *model.AppError {
 	// Get the direct channel between the users
 	channel, appErr := p.API.GetDirectChannel(fromUserId, toUserId)
@@ -146,19 +198,41 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 		return appErr
 	}
 	
+	// Get the webhook ID
+	webhookIDBytes, appErr := p.API.KVGet("bot_webhook_id")
+	if appErr != nil {
+		return appErr
+	}
+	
+	if webhookIDBytes == nil {
+		return &model.AppError{
+			Message: "Bot webhook not found",
+		}
+	}
+	
 	// Create the message with formatted content
 	message := fmt.Sprintf("**New Approval Request from @%s**\n\n**%s**\n\n%s", 
 		requester.Username, title, description)
 	
-	// Create and send the post as the user who initiated the request
-	post := &model.Post{
-		UserId:    fromUserId,
-		ChannelId: channel.Id,
-		Message:   message,
+	// Get the webhook
+	webhook, appErr := p.API.GetIncomingWebhook(string(webhookIDBytes))
+	if appErr != nil {
+		return appErr
 	}
 	
-	_, appErr = p.API.CreatePost(post)
-	return appErr
+	// Create a post through the webhook
+	webhookRequest := &model.IncomingWebhookRequest{
+		ChannelId: channel.Id,
+		Username:  botUsername,
+		Text:      message,
+	}
+	
+	// Use the API to post to the webhook
+	if err := p.API.ExecuteIncomingWebhook(webhook.Id, webhookRequest); err != nil {
+		return err
+	}
+	
+	return nil
 }
 
 // ServeHTTP handles HTTP requests to the plugin
