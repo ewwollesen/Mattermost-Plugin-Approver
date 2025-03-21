@@ -82,7 +82,7 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 	// Create the bot user
 	bot := &model.User{
 		Username:    botUsername,
-		DisplayName: botDisplayName,
+		FirstName:   botDisplayName,
 		Email:       botEmail,
 		Password:    model.NewId(),
 		Roles:       model.SYSTEM_USER_ROLE_ID,
