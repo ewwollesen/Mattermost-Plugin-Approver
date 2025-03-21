@@ -69,6 +69,13 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 		}
 	}
 	
+	// Try to find an existing user with the bot username
+	user, _ := p.API.GetUserByUsername(botUsername)
+	if user != nil {
+		// User already exists, store its ID and return
+		return user.Id, nil
+	}
+	
 	// Get the first team
 	teams, err := p.API.GetTeams()
 	if err != nil {
@@ -79,11 +86,12 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 		return "", &model.AppError{Message: "No teams found"}
 	}
 	
-	// Create the bot user
+	// Create the bot user with a unique username
+	uniqueUsername := botUsername + model.NewId()[:5]
 	bot := &model.User{
-		Username:    botUsername,
+		Username:    uniqueUsername,
 		FirstName:   botDisplayName,
-		Email:       botEmail,
+		Email:       model.NewId() + "@example.com", // Unique email
 		Password:    model.NewId(),
 		Roles:       model.SYSTEM_USER_ROLE_ID,
 	}
@@ -95,6 +103,21 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 	
 	// Add bot to the first team
 	_, err = p.API.CreateTeamMember(teams[0].Id, createdBot.Id)
+	if err != nil {
+		return "", err
+	}
+	
+	// Update the bot's properties to make it look like a bot
+	patch := &model.UserPatch{
+		NotifyProps: &model.StringMap{
+			"email":         "false",
+			"desktop":       "none",
+			"desktop_sound": "false",
+			"mention_keys":  "",
+		},
+	}
+	
+	_, err = p.API.PatchUser(createdBot.Id, patch)
 	if err != nil {
 		return "", err
 	}
