@@ -226,7 +226,7 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 			Message:   message,
 		}
 		
-		p.API.LogDebug("Sending post as bot", "user_id", senderID, "channel_id", channel.Id)
+		p.API.LogDebug("Sending post as bot", "user_id", senderID, "channel_id", channel.Id, "message", message)
 		_, appErr = p.API.CreatePost(post)
 		if appErr != nil {
 			p.API.LogError("Failed to create post as bot", "error", appErr.Error())
@@ -255,7 +255,7 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 			Message:   message,
 		}
 		
-		p.API.LogDebug("Sending post as user", "user_id", fromUserId, "channel_id", channel.Id)
+		p.API.LogDebug("Sending post as user", "user_id", fromUserId, "channel_id", channel.Id, "message", message)
 		_, appErr = p.API.CreatePost(post)
 		if appErr != nil {
 			p.API.LogError("Failed to create post as user", "error", appErr.Error())
