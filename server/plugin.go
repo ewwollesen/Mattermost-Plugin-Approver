@@ -224,29 +224,18 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 		
 		if appErr != nil {
 			p.API.LogDebug("Failed to get direct channel, falling back to user", "error", appErr.Error())
+			// Fall back to using the requester's ID
+			channel, appErr = p.API.GetDirectChannel(fromUserId, toUserId)
 			if appErr != nil {
-				p.API.LogError("Failed to create direct channel for bot", "error", appErr.Error())
-				// Fall back to using the requester's ID
-				channel, appErr = p.API.GetDirectChannel(fromUserId, toUserId)
-				if appErr != nil {
-					p.API.LogError("Failed to get direct channel for user", "error", appErr.Error())
-					return appErr
-				}
-				
-				// Create post as the user
-				post = &model.Post{
-					UserId:    fromUserId,
-					ChannelId: channel.Id,
-					Message:   message,
-				}
-			} else {
-				p.API.LogDebug("Successfully created direct channel", "channel_id", channel.Id)
-				// Create post as the bot
-				post = &model.Post{
-					UserId:    botUserID,
-					ChannelId: channel.Id,
-					Message:   message,
-				}
+				p.API.LogError("Failed to get direct channel for user", "error", appErr.Error())
+				return appErr
+			}
+			
+			// Create post as the user
+			post = &model.Post{
+				UserId:    fromUserId,
+				ChannelId: channel.Id,
+				Message:   message,
 			}
 		} else {
 			p.API.LogDebug("Found existing DM channel", "channel_id", channel.Id)
@@ -299,6 +288,8 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 // handleDialogSubmission processes the submitted dialog
 func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) {
+	p.API.LogDebug("Dialog submission received")
+	
 	request := model.SubmitDialogRequestFromJson(r.Body)
 	if request == nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -315,7 +306,8 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 		"title", title,
 		"description_length", len(description),
 		"approver", approverUserId,
-		"requester", request.UserId)
+		"requester", request.UserId,
+		"channel_id", request.ChannelId)
 	
 	// Send a direct message to the approver
 	err := p.sendDirectMessage(request.UserId, approverUserId, title, description)
