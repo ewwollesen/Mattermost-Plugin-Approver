@@ -219,19 +219,11 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 		botUserID := string(botUserIDBytes)
 		p.API.LogDebug("Attempting to use bot for messaging", "bot_id", botUserID)
 		
-		// Create or get the direct channel between the bot and the approver
-		channelName := model.GetDMNameFromIds(botUserID, toUserId)
-		channel, appErr = p.API.GetChannelByName("", channelName)
+		// Try to get the direct channel between the bot and the approver
+		channel, appErr = p.API.GetDirectChannel(botUserID, toUserId)
 		
-		if appErr != nil || channel == nil {
-			p.API.LogDebug("Channel not found, creating new DM channel", "channel_name", channelName)
-			// Try to create the channel
-			directChannel := &model.Channel{
-				Name: channelName,
-				Type: model.CHANNEL_DIRECT,
-			}
-			
-			channel, appErr = p.API.CreateDirectChannel(botUserID, toUserId)
+		if appErr != nil {
+			p.API.LogDebug("Failed to get direct channel, falling back to user", "error", appErr.Error())
 			if appErr != nil {
 				p.API.LogError("Failed to create direct channel for bot", "error", appErr.Error())
 				// Fall back to using the requester's ID
