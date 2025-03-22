@@ -103,7 +103,7 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 	
 	// No need to add a bot to a team
 	
-	return createdBot.Id, nil
+	return createdBot.UserId, nil
 }
 
 // ExecuteCommand handles the /approver slash command
