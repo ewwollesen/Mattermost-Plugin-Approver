@@ -188,7 +188,7 @@ func (p *Plugin) handleSubmitDialog(request *model.SubmitDialogRequest) (*model.
 	return &model.SubmitDialogResponse{}, nil
 }
 
-// sendDirectMessage sends a direct message from one user to another
+// sendDirectMessage sends a direct message from the bot to a user
 func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description string) *model.AppError {
 	// Try to get the bot user ID
 	botUserIDBytes, appErr := p.API.KVGet("bot_user_id")
@@ -198,14 +198,6 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 		p.API.LogDebug("Found bot user ID", "bot_id", string(botUserIDBytes))
 	} else {
 		p.API.LogDebug("No bot user ID found or error retrieving it", "error", appErr)
-	}
-	
-	// Always use the requester's ID for now to ensure messages are sent
-	// This is more reliable than trying to use the bot
-	channel, appErr := p.API.GetDirectChannel(fromUserId, toUserId)
-	if appErr != nil {
-		p.API.LogError("Failed to get direct channel", "error", appErr.Error())
-		return appErr
 	}
 	
 	// Get information about the requester
@@ -219,13 +211,55 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 	message := fmt.Sprintf("**New Approval Request from @%s**\n\n**%s**\n\n%s", 
 		requester.Username, title, description)
 	
-	// Create and send the post as the user who initiated the request
-	post := &model.Post{
-		UserId:    fromUserId,
-		ChannelId: channel.Id,
-		Message:   message,
+	var post *model.Post
+	var channel *model.Channel
+	
+	// Try to use the bot if available
+	if appErr == nil && botUserIDBytes != nil {
+		botUserID := string(botUserIDBytes)
+		
+		// Get the direct channel between the bot and the approver
+		channel, appErr = p.API.GetDirectChannel(botUserID, toUserId)
+		if appErr != nil {
+			p.API.LogError("Failed to get direct channel for bot", "error", appErr.Error())
+			// Fall back to using the requester's ID
+			channel, appErr = p.API.GetDirectChannel(fromUserId, toUserId)
+			if appErr != nil {
+				p.API.LogError("Failed to get direct channel for user", "error", appErr.Error())
+				return appErr
+			}
+			
+			// Create post as the user
+			post = &model.Post{
+				UserId:    fromUserId,
+				ChannelId: channel.Id,
+				Message:   message,
+			}
+		} else {
+			// Create post as the bot
+			post = &model.Post{
+				UserId:    botUserID,
+				ChannelId: channel.Id,
+				Message:   message,
+			}
+		}
+	} else {
+		// Fall back to using the requester's ID
+		channel, appErr = p.API.GetDirectChannel(fromUserId, toUserId)
+		if appErr != nil {
+			p.API.LogError("Failed to get direct channel for user", "error", appErr.Error())
+			return appErr
+		}
+		
+		// Create post as the user
+		post = &model.Post{
+			UserId:    fromUserId,
+			ChannelId: channel.Id,
+			Message:   message,
+		}
 	}
 	
+	// Send the post
 	_, appErr = p.API.CreatePost(post)
 	if appErr != nil {
 		p.API.LogError("Failed to create post", "error", appErr.Error())
