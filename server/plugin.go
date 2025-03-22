@@ -217,25 +217,47 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 	// Try to use the bot if available
 	if appErr == nil && botUserIDBytes != nil {
 		botUserID := string(botUserIDBytes)
+		p.API.LogDebug("Attempting to use bot for messaging", "bot_id", botUserID)
 		
-		// Get the direct channel between the bot and the approver
-		channel, appErr = p.API.GetDirectChannel(botUserID, toUserId)
-		if appErr != nil {
-			p.API.LogError("Failed to get direct channel for bot", "error", appErr.Error())
-			// Fall back to using the requester's ID
-			channel, appErr = p.API.GetDirectChannel(fromUserId, toUserId)
-			if appErr != nil {
-				p.API.LogError("Failed to get direct channel for user", "error", appErr.Error())
-				return appErr
+		// Create or get the direct channel between the bot and the approver
+		channelName := model.GetDMNameFromIds(botUserID, toUserId)
+		channel, appErr = p.API.GetChannelByName("", channelName)
+		
+		if appErr != nil || channel == nil {
+			p.API.LogDebug("Channel not found, creating new DM channel", "channel_name", channelName)
+			// Try to create the channel
+			directChannel := &model.Channel{
+				Name: channelName,
+				Type: model.CHANNEL_DIRECT,
 			}
 			
-			// Create post as the user
-			post = &model.Post{
-				UserId:    fromUserId,
-				ChannelId: channel.Id,
-				Message:   message,
+			channel, appErr = p.API.CreateDirectChannel(botUserID, toUserId)
+			if appErr != nil {
+				p.API.LogError("Failed to create direct channel for bot", "error", appErr.Error())
+				// Fall back to using the requester's ID
+				channel, appErr = p.API.GetDirectChannel(fromUserId, toUserId)
+				if appErr != nil {
+					p.API.LogError("Failed to get direct channel for user", "error", appErr.Error())
+					return appErr
+				}
+				
+				// Create post as the user
+				post = &model.Post{
+					UserId:    fromUserId,
+					ChannelId: channel.Id,
+					Message:   message,
+				}
+			} else {
+				p.API.LogDebug("Successfully created direct channel", "channel_id", channel.Id)
+				// Create post as the bot
+				post = &model.Post{
+					UserId:    botUserID,
+					ChannelId: channel.Id,
+					Message:   message,
+				}
 			}
 		} else {
+			p.API.LogDebug("Found existing DM channel", "channel_id", channel.Id)
 			// Create post as the bot
 			post = &model.Post{
 				UserId:    botUserID,
@@ -244,6 +266,7 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 			}
 		}
 	} else {
+		p.API.LogDebug("No bot available, using requester ID for messaging")
 		// Fall back to using the requester's ID
 		channel, appErr = p.API.GetDirectChannel(fromUserId, toUserId)
 		if appErr != nil {
