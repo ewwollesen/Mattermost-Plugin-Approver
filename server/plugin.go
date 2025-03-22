@@ -39,9 +39,9 @@ func (p *Plugin) OnActivate() error {
 	}
 	
 	// Create or get the bot user
-	botUserID, err := p.ensureBotUser()
-	if err != nil {
-		return fmt.Errorf("failed to ensure bot user: %w", err)
+	botUserID, appErr := p.ensureBotUser()
+	if appErr != nil {
+		return appErr
 	}
 	
 	// Store the bot user ID in the KV store
@@ -70,8 +70,8 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 	}
 	
 	// Try to find an existing user with the bot username
-	existingBot, _ := p.API.GetUserByUsername(botUsername)
-	if existingBot != nil {
+	existingBot, appErr := p.API.GetUserByUsername(botUsername)
+	if appErr == nil && existingBot != nil {
 		// User already exists, store its ID and return
 		return existingBot.Id, nil
 	}
