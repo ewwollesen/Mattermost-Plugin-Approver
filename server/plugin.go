@@ -193,56 +193,47 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 	// Try to get the bot user ID
 	botUserIDBytes, appErr := p.API.KVGet("bot_user_id")
 	
-	var senderID string
+	// Log the bot user ID for debugging
 	if appErr == nil && botUserIDBytes != nil {
-		// Use the bot to send the message
-		senderID = string(botUserIDBytes)
-		
-		// Get the direct channel between the bot and the user
-		channel, appErr := p.API.GetDirectChannel(senderID, toUserId)
-		if appErr != nil {
-			return appErr
-		}
-		
-		// Get information about the requester
-		requester, appErr := p.API.GetUser(fromUserId)
-		if appErr != nil {
-			return appErr
-		}
-		
-		// Create the message with formatted content
-		message := fmt.Sprintf("**New Approval Request from @%s**\n\n**%s**\n\n%s", 
-			requester.Username, title, description)
-		
-		// Create and send the post as the bot
-		post := &model.Post{
-			UserId:    senderID,
-			ChannelId: channel.Id,
-			Message:   message,
-		}
-		
-		_, appErr = p.API.CreatePost(post)
-		return appErr
+		p.API.LogDebug("Found bot user ID", "bot_id", string(botUserIDBytes))
 	} else {
-		// Fall back to sending as the user if bot is not available
-		channel, appErr := p.API.GetDirectChannel(fromUserId, toUserId)
-		if appErr != nil {
-			return appErr
-		}
-		
-		// Create the message with formatted content
-		message := fmt.Sprintf("**%s**\n\n%s", title, description)
-		
-		// Create and send the post
-		post := &model.Post{
-			UserId:    fromUserId,
-			ChannelId: channel.Id,
-			Message:   message,
-		}
-		
-		_, appErr = p.API.CreatePost(post)
+		p.API.LogDebug("No bot user ID found or error retrieving it", "error", appErr)
+	}
+	
+	// Always use the requester's ID for now to ensure messages are sent
+	// This is more reliable than trying to use the bot
+	channel, appErr := p.API.GetDirectChannel(fromUserId, toUserId)
+	if appErr != nil {
+		p.API.LogError("Failed to get direct channel", "error", appErr.Error())
 		return appErr
 	}
+	
+	// Get information about the requester
+	requester, appErr := p.API.GetUser(fromUserId)
+	if appErr != nil {
+		p.API.LogError("Failed to get requester info", "error", appErr.Error())
+		return appErr
+	}
+	
+	// Create the message with formatted content
+	message := fmt.Sprintf("**New Approval Request from @%s**\n\n**%s**\n\n%s", 
+		requester.Username, title, description)
+	
+	// Create and send the post as the user who initiated the request
+	post := &model.Post{
+		UserId:    fromUserId,
+		ChannelId: channel.Id,
+		Message:   message,
+	}
+	
+	_, appErr = p.API.CreatePost(post)
+	if appErr != nil {
+		p.API.LogError("Failed to create post", "error", appErr.Error())
+	} else {
+		p.API.LogDebug("Successfully sent direct message")
+	}
+	
+	return appErr
 }
 
 // ServeHTTP handles HTTP requests to the plugin
@@ -262,6 +253,7 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	request := model.SubmitDialogRequestFromJson(r.Body)
 	if request == nil {
 		w.WriteHeader(http.StatusBadRequest)
+		p.API.LogError("Failed to parse dialog submission request")
 		return
 	}
 	
@@ -270,9 +262,16 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	description := request.Submission["description"].(string)
 	approverUserId := request.Submission["approver"].(string)
 	
+	p.API.LogDebug("Processing dialog submission", 
+		"title", title,
+		"description_length", len(description),
+		"approver", approverUserId,
+		"requester", request.UserId)
+	
 	// Send a direct message to the approver
 	err := p.sendDirectMessage(request.UserId, approverUserId, title, description)
 	if err != nil {
+		p.API.LogError("Failed to send direct message", "error", err.Error())
 		response := &model.SubmitDialogResponse{
 			Error: "Failed to send message to approver: " + err.Error(),
 		}
