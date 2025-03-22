@@ -88,27 +88,20 @@ func (p *Plugin) ensureBotUser() (string, *model.AppError) {
 	
 	// Generate a unique username to avoid conflicts
 	uniqueUsername := botUsername + "_" + model.NewId()[:5]
-	uniqueEmail := uniqueUsername + "@example.com"
 	
 	// Create the bot user with the unique username
-	bot := &model.User{
+	bot := &model.Bot{
 		Username:    uniqueUsername,
-		FirstName:   botDisplayName,
-		Email:       uniqueEmail,
-		Password:    model.NewId(),
-		Roles:       model.SYSTEM_USER_ROLE_ID,
+		DisplayName: botDisplayName,
+		Description: botDescription,
 	}
 	
-	createdBot, err := p.API.CreateUser(bot)
+	createdBot, err := p.API.CreateBot(bot)
 	if err != nil {
 		return "", err
 	}
 	
-	// Add bot to the first team
-	_, err = p.API.CreateTeamMember(teams[0].Id, createdBot.Id)
-	if err != nil {
-		return "", err
-	}
+	// No need to add a bot to a team
 	
 	return createdBot.Id, nil
 }
