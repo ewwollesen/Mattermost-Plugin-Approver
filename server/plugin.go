@@ -181,7 +181,7 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 		requester.Username, title, description)
 	
 	// First try with the bot user if available
-	if appErr == nil && botUserIDBytes != nil {
+	if appErr == nil && len(botUserIDBytes) > 0 {
 		botUserID := string(botUserIDBytes)
 		p.API.LogDebug("Using bot to send message", "bot_id", botUserID)
 		
@@ -275,8 +275,10 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	botUserIDBytes, appErr := p.API.KVGet("bot_user_id")
 	if appErr != nil {
 		p.API.LogError("Failed to get bot user ID", "error", appErr.Error())
-	} else if botUserIDBytes != nil {
+	} else if len(botUserIDBytes) > 0 {
 		p.API.LogDebug("Found bot user ID", "bot_id", string(botUserIDBytes))
+	} else {
+		p.API.LogDebug("No bot user ID found")
 	}
 	
 	// Send a direct message to the approver
