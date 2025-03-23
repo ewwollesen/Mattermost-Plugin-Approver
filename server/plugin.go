@@ -163,30 +163,6 @@ func (p *Plugin) handleNewCommand(args *model.CommandArgs) (*model.CommandRespon
 	return &model.CommandResponse{}, nil
 }
 
-// handleSubmitDialog processes the submitted dialog
-func (p *Plugin) handleSubmitDialog(request *model.SubmitDialogRequest) (*model.SubmitDialogResponse, *model.AppError) {
-	// Extract form values
-	title := request.Submission["title"].(string)
-	description := request.Submission["description"].(string)
-	approverUserId := request.Submission["approver"].(string)
-	
-	// Send a direct message to the approver
-	err := p.sendDirectMessage(request.UserId, approverUserId, title, description)
-	if err != nil {
-		return &model.SubmitDialogResponse{
-			Error: "Failed to send message to approver: " + err.Error(),
-		}, nil
-	}
-	
-	// Send confirmation to the user who submitted the request
-	p.API.SendEphemeralPost(request.ChannelId, &model.Post{
-		UserId:    request.UserId,
-		ChannelId: request.ChannelId,
-		Message:   "Your approval request has been sent to the approver.",
-	})
-	
-	return &model.SubmitDialogResponse{}, nil
-}
 
 // sendDirectMessage sends a direct message from the bot to a user
 func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description string) *model.AppError {
@@ -294,6 +270,14 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 		"approver", approverUserId,
 		"requester", request.UserId,
 		"channel_id", request.ChannelId)
+	
+	// Try to get the bot user ID
+	botUserIDBytes, appErr := p.API.KVGet("bot_user_id")
+	if appErr != nil {
+		p.API.LogError("Failed to get bot user ID", "error", appErr.Error())
+	} else if botUserIDBytes != nil {
+		p.API.LogDebug("Found bot user ID", "bot_id", string(botUserIDBytes))
+	}
 	
 	// Send a direct message to the approver
 	err := p.sendDirectMessage(request.UserId, approverUserId, title, description)
