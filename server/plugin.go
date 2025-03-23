@@ -181,7 +181,7 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 		requester.Username, title, description)
 	
 	// First try with the bot user if available
-	if appErr == nil && len(botUserIDBytes) > 0 {
+	if len(botUserIDBytes) > 0 {
 		botUserID := string(botUserIDBytes)
 		p.API.LogDebug("Using bot to send message", "bot_id", botUserID)
 		
