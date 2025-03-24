@@ -285,10 +285,46 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	
 	p.API.LogDebug("Dialog submission parsed successfully", "callback_id", request.CallbackId)
 	
-	// Extract form values
-	title := request.Submission["title"].(string)
-	description := request.Submission["description"].(string)
-	approverUserId := request.Submission["approver"].(string)
+	// Extract form values with safety checks
+	var title, description, approverUserId string
+	
+	if titleVal, ok := request.Submission["title"]; ok {
+		if titleStr, ok := titleVal.(string); ok {
+			title = titleStr
+		} else {
+			p.API.LogError("Title is not a string")
+			title = "Untitled Request"
+		}
+	} else {
+		p.API.LogError("Title field missing from submission")
+		title = "Untitled Request"
+	}
+	
+	if descVal, ok := request.Submission["description"]; ok {
+		if descStr, ok := descVal.(string); ok {
+			description = descStr
+		} else {
+			p.API.LogError("Description is not a string")
+			description = "No description provided"
+		}
+	} else {
+		p.API.LogError("Description field missing from submission")
+		description = "No description provided"
+	}
+	
+	if approverVal, ok := request.Submission["approver"]; ok {
+		if approverStr, ok := approverVal.(string); ok {
+			approverUserId = approverStr
+		} else {
+			p.API.LogError("Approver is not a string")
+			// Fall back to the requester as the approver
+			approverUserId = request.UserId
+		}
+	} else {
+		p.API.LogError("Approver field missing from submission")
+		// Fall back to the requester as the approver
+		approverUserId = request.UserId
+	}
 	
 	p.API.LogDebug("Processing dialog submission", 
 		"title", title,
@@ -311,6 +347,35 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	submissionData, _ := json.Marshal(request.Submission)
 	p.API.LogDebug("Submission data", "data", string(submissionData))
 	
+	// Validate that we have all required fields
+	if title == "" || description == "" || approverUserId == "" {
+		p.API.LogError("Missing required fields", 
+			"title_empty", title == "",
+			"description_empty", description == "",
+			"approver_empty", approverUserId == "")
+		
+		response := &model.SubmitDialogResponse{
+			Error: "Missing required fields. Please fill in all fields and try again.",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+	
+	// Verify the approver exists
+	_, appErr := p.API.GetUser(approverUserId)
+	if appErr != nil {
+		p.API.LogError("Invalid approver user ID", "error", appErr.Error())
+		response := &model.SubmitDialogResponse{
+			Error: "The selected approver is invalid. Please select a different user.",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+	
 	// Send a direct message to the approver
 	err = p.sendDirectMessage(request.UserId, approverUserId, title, description)
 	if err != nil {
@@ -330,11 +395,15 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	}
 	
 	// Send confirmation to the user who submitted the request
-	p.API.SendEphemeralPost(request.ChannelId, &model.Post{
+	ephemeralErr := p.API.SendEphemeralPost(request.ChannelId, &model.Post{
 		UserId:    request.UserId,
 		ChannelId: request.ChannelId,
 		Message:   "Your approval request has been sent to the approver.",
 	})
+	
+	if ephemeralErr != nil {
+		p.API.LogError("Failed to send confirmation message", "error", ephemeralErr.Error())
+	}
 	
 	response := &model.SubmitDialogResponse{}
 	w.Header().Set("Content-Type", "application/json")
