@@ -364,7 +364,7 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	}
 	
 	// Verify the approver exists
-	_, appErr := p.API.GetUser(approverUserId)
+	_, appErr = p.API.GetUser(approverUserId)
 	if appErr != nil {
 		p.API.LogError("Invalid approver user ID", "error", appErr.Error())
 		response := &model.SubmitDialogResponse{
@@ -395,15 +395,11 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	}
 	
 	// Send confirmation to the user who submitted the request
-	ephemeralErr := p.API.SendEphemeralPost(request.ChannelId, &model.Post{
+	p.API.SendEphemeralPost(request.ChannelId, &model.Post{
 		UserId:    request.UserId,
 		ChannelId: request.ChannelId,
 		Message:   "Your approval request has been sent to the approver.",
 	})
-	
-	if ephemeralErr != nil {
-		p.API.LogError("Failed to send confirmation message", "error", ephemeralErr.Error())
-	}
 	
 	response := &model.SubmitDialogResponse{}
 	w.Header().Set("Content-Type", "application/json")
