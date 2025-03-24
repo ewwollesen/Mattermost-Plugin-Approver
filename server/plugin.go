@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -240,17 +242,40 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	
+	p.API.LogDebug("Received HTTP request", "method", r.Method, "path", path)
+	
 	if path == "/dialog/submit" {
+		p.API.LogDebug("Handling dialog submission")
 		p.handleDialogSubmission(w, r)
 		return
 	}
 	
+	p.API.LogDebug("Path not found", "path", path)
 	http.NotFound(w, r)
 }
 
 // handleDialogSubmission processes the submitted dialog
 func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) {
-	p.API.LogDebug("Dialog submission received")
+	p.API.LogDebug("Dialog submission received", "method", r.Method, "path", r.URL.Path)
+	
+	// Log request headers for debugging
+	for name, values := range r.Header {
+		p.API.LogDebug("Request header", "name", name, "value", strings.Join(values, ", "))
+	}
+	
+	// Read and log the raw request body
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		p.API.LogError("Failed to read request body", "error", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	
+	// Log the raw request body
+	p.API.LogDebug("Raw request body", "body", string(bodyBytes))
+	
+	// Reset the request body so it can be read again
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	
 	request := model.SubmitDialogRequestFromJson(r.Body)
 	if request == nil {
@@ -258,6 +283,8 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 		p.API.LogError("Failed to parse dialog submission request")
 		return
 	}
+	
+	p.API.LogDebug("Dialog submission parsed successfully", "callback_id", request.CallbackId)
 	
 	// Extract form values
 	title := request.Submission["title"].(string)
@@ -281,6 +308,10 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 		p.API.LogDebug("No bot user ID found")
 	}
 	
+	// Log all submission data
+	submissionData, _ := json.Marshal(request.Submission)
+	p.API.LogDebug("Submission data", "data", string(submissionData))
+	
 	// Send a direct message to the approver
 	err := p.sendDirectMessage(request.UserId, approverUserId, title, description)
 	if err != nil {
@@ -290,6 +321,11 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		
+		// Log the response we're sending back
+		responseBytes, _ := json.Marshal(response)
+		p.API.LogDebug("Sending error response", "response", string(responseBytes))
+		
 		json.NewEncoder(w).Encode(response)
 		return
 	}
@@ -304,6 +340,10 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	response := &model.SubmitDialogResponse{}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	
+	// Log the success response
+	p.API.LogDebug("Sending success response")
+	
 	json.NewEncoder(w).Encode(response)
 }
 
