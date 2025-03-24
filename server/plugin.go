@@ -313,7 +313,7 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	p.API.LogDebug("Submission data", "data", string(submissionData))
 	
 	// Send a direct message to the approver
-	err := p.sendDirectMessage(request.UserId, approverUserId, title, description)
+	err = p.sendDirectMessage(request.UserId, approverUserId, title, description)
 	if err != nil {
 		p.API.LogError("Failed to send direct message", "error", err.Error())
 		response := &model.SubmitDialogResponse{
