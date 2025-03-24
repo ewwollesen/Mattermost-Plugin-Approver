@@ -419,13 +419,24 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	
-	// Send confirmation to the user who submitted the request
-	p.API.SendEphemeralPost(request.ChannelId, &model.Post{
-		UserId:    request.UserId,
-		ChannelId: request.ChannelId,
-		Message:   "Your approval request has been sent to the approver.",
-	})
+	// Try to send confirmation to the user who submitted the request
+	// Wrap this in a defer and recover to prevent crashes
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				p.API.LogError("Recovered from panic in ephemeral post", "recover", r)
+			}
+		}()
+		
+		p.API.LogDebug("Sending ephemeral confirmation message")
+		p.API.SendEphemeralPost(request.ChannelId, &model.Post{
+			UserId:    request.UserId,
+			ChannelId: request.ChannelId,
+			Message:   "Your approval request has been sent to the approver.",
+		})
+	}()
 	
+	// Send success response
 	response := &model.SubmitDialogResponse{}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
