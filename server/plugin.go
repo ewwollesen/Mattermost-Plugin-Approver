@@ -404,9 +404,14 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	// Send a direct message to the approver
 	err = p.sendDirectMessage(request.UserId, approverUserId, title, description)
 	if err != nil {
-		p.API.LogError("Failed to send direct message", "error", err.Error())
+		errMsg := "Failed to send message to approver"
+		if err.Error != nil {
+			errMsg += ": " + err.Error()
+		}
+		
+		p.API.LogError("Failed to send direct message", "error", errMsg)
 		response := &model.SubmitDialogResponse{
-			Error: "Failed to send message to approver: " + err.Error(),
+			Error: errMsg,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -420,21 +425,8 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	}
 	
 	// Try to send confirmation to the user who submitted the request
-	// Wrap this in a defer and recover to prevent crashes
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				p.API.LogError("Recovered from panic in ephemeral post", "recover", r)
-			}
-		}()
-		
-		p.API.LogDebug("Sending ephemeral confirmation message")
-		p.API.SendEphemeralPost(request.ChannelId, &model.Post{
-			UserId:    request.UserId,
-			ChannelId: request.ChannelId,
-			Message:   "Your approval request has been sent to the approver.",
-		})
-	}()
+	// Use a separate function to isolate any potential panics
+	p.sendConfirmationMessage(request.UserId, request.ChannelId)
 	
 	// Send success response
 	response := &model.SubmitDialogResponse{}
@@ -445,6 +437,23 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	p.API.LogDebug("Sending success response")
 	
 	json.NewEncoder(w).Encode(response)
+}
+
+// sendConfirmationMessage sends a confirmation message to the user
+// This is in a separate function to isolate any potential panics
+func (p *Plugin) sendConfirmationMessage(userId, channelId string) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.API.LogError("Recovered from panic in sendConfirmationMessage", "recover", r)
+		}
+	}()
+	
+	p.API.LogDebug("Sending ephemeral confirmation message")
+	p.API.SendEphemeralPost(channelId, &model.Post{
+		UserId:    userId,
+		ChannelId: channelId,
+		Message:   "Your approval request has been sent to the approver.",
+	})
 }
 
 func main() {
