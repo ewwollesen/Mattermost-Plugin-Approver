@@ -134,8 +134,7 @@ func (p *Plugin) handleNewCommand(args *model.CommandArgs) (*model.CommandRespon
 			{
 				DisplayName: "Description",
 				Name:        "description",
-				Type:        "text",
-				SubType:     "textarea",
+				Type:        "textarea",
 				Optional:    false,
 			},
 			{
