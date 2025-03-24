@@ -264,6 +264,14 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 
 // ServeHTTP handles HTTP requests to the plugin
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
+	// Add panic recovery to prevent plugin crashes
+	defer func() {
+		if r := recover(); r != nil {
+			p.API.LogError("Recovered from panic in ServeHTTP", "recover", r)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}()
+	
 	path := r.URL.Path
 	
 	p.API.LogDebug("Received HTTP request", "method", r.Method, "path", path)
@@ -405,7 +413,9 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	err = p.sendDirectMessage(request.UserId, approverUserId, title, description)
 	if err != nil {
 		errMsg := "Failed to send message to approver"
-		if err.Error != nil {
+		
+		// Safely access the error message
+		if err != nil && err.Error != nil {
 			errMsg += ": " + err.Error()
 		}
 		
@@ -447,6 +457,14 @@ func (p *Plugin) sendConfirmationMessage(userId, channelId string) {
 			p.API.LogError("Recovered from panic in sendConfirmationMessage", "recover", r)
 		}
 	}()
+	
+	// Verify inputs are not empty
+	if userId == "" || channelId == "" {
+		p.API.LogError("Invalid parameters for sendConfirmationMessage", 
+			"userId_empty", userId == "",
+			"channelId_empty", channelId == "")
+		return
+	}
 	
 	p.API.LogDebug("Sending ephemeral confirmation message")
 	p.API.SendEphemeralPost(channelId, &model.Post{
