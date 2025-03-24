@@ -268,7 +268,11 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	defer func() {
 		if r := recover(); r != nil {
 			p.API.LogError("Recovered from panic in ServeHTTP", "recover", r)
+			// Ensure we always return a response
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
+			response := map[string]string{"error": "Internal server error"}
+			json.NewEncoder(w).Encode(response)
 		}
 	}()
 	
@@ -414,9 +418,15 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		errMsg := "Failed to send message to approver"
 		
-		// Safely access the error message
-		if err != nil && err.Error != nil {
-			errMsg += ": " + err.Error()
+		// Safely access the error message - avoid nil pointer dereference
+		if err != nil {
+			p.API.LogError("Direct message error", "error_type", fmt.Sprintf("%T", err))
+			if appErr, ok := err.(*model.AppError); ok && appErr != nil && appErr.Error != nil {
+				errMsg += ": " + appErr.Error()
+			} else {
+				// Use fmt.Sprintf to safely get string representation
+				errMsg += fmt.Sprintf(": %v", err)
+			}
 		}
 		
 		p.API.LogError("Failed to send direct message", "error", errMsg)
@@ -466,12 +476,26 @@ func (p *Plugin) sendConfirmationMessage(userId, channelId string) {
 		return
 	}
 	
-	p.API.LogDebug("Sending ephemeral confirmation message")
-	p.API.SendEphemeralPost(channelId, &model.Post{
+	// Create the post first
+	post := &model.Post{
 		UserId:    userId,
 		ChannelId: channelId,
 		Message:   "Your approval request has been sent to the approver.",
-	})
+	}
+	
+	// Verify the post is valid
+	if post == nil || post.UserId == "" || post.ChannelId == "" || post.Message == "" {
+		p.API.LogError("Invalid post for confirmation message")
+		return
+	}
+	
+	p.API.LogDebug("Sending ephemeral confirmation message")
+	
+	// Try to send the ephemeral post, but don't crash if it fails
+	err := p.API.SendEphemeralPost(channelId, post)
+	if err != nil {
+		p.API.LogError("Failed to send ephemeral post", "error", fmt.Sprintf("%v", err))
+	}
 }
 
 func main() {
