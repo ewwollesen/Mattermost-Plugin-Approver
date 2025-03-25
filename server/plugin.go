@@ -420,7 +420,8 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	
 	// Send a direct message to the approver
 	err = p.sendDirectMessage(request.UserId, approverUserId, title, description)
-	// Only handle error if it's not nil
+	
+	// Check if there was an actual error
 	if err != nil {
 		errMsg := "Failed to send message to approver"
 		
@@ -446,6 +447,8 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 		
 		json.NewEncoder(w).Encode(response)
 		return
+	} else {
+		p.API.LogDebug("Direct message sent successfully")
 	}
 	
 	// Try to send confirmation to the user who submitted the request
