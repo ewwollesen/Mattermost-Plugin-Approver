@@ -217,6 +217,7 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 				_, postErr := p.API.CreatePost(botPost)
 				if postErr == nil {
 					p.API.LogDebug("Successfully sent message as bot")
+					// Return nil explicitly to avoid returning a nil AppError which causes issues
 					return nil
 				}
 				
@@ -419,18 +420,17 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 	
 	// Send a direct message to the approver
 	err = p.sendDirectMessage(request.UserId, approverUserId, title, description)
+	// Only handle error if it's not nil
 	if err != nil {
 		errMsg := "Failed to send message to approver"
 		
 		// Safely access the error message - avoid nil pointer dereference
-		if err != nil {
-			p.API.LogError("Direct message error", "error_type", fmt.Sprintf("%T", err))
-			if appErr, ok := err.(*model.AppError); ok && appErr != nil && appErr.Error != nil {
-				errMsg += ": " + appErr.Error()
-			} else {
-				// Use fmt.Sprintf to safely get string representation
-				errMsg += fmt.Sprintf(": %v", err)
-			}
+		p.API.LogError("Direct message error", "error_type", fmt.Sprintf("%T", err))
+		if appErr, ok := err.(*model.AppError); ok && appErr != nil && appErr.Error != nil {
+			errMsg += ": " + appErr.Error()
+		} else {
+			// Use fmt.Sprintf to safely get string representation
+			errMsg += fmt.Sprintf(": %v", err)
 		}
 		
 		p.API.LogError("Failed to send direct message", "error", errMsg)
