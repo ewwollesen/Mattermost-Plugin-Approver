@@ -260,11 +260,11 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 	_, appErr = p.API.CreatePost(post)
 	if appErr != nil {
 		p.API.LogError("Failed to create post as user", "error", appErr.Error())
-	} else {
-		p.API.LogDebug("Successfully sent message as user")
+		return appErr
 	}
 	
-	return appErr
+	p.API.LogDebug("Successfully sent message as user")
+	return nil
 }
 
 // ServeHTTP handles HTTP requests to the plugin
@@ -447,9 +447,10 @@ func (p *Plugin) handleDialogSubmission(w http.ResponseWriter, r *http.Request) 
 		
 		json.NewEncoder(w).Encode(response)
 		return
-	} else {
-		p.API.LogDebug("Direct message sent successfully")
 	}
+	
+	// If we got here, the message was sent successfully
+	p.API.LogDebug("Direct message sent successfully")
 	
 	// Try to send confirmation to the user who submitted the request
 	// Use a separate function to isolate any potential panics
