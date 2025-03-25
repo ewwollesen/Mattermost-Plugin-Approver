@@ -198,7 +198,7 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 		// Verify the bot user exists
 		botUser, botUserErr := p.API.GetUser(botUserID)
 		if botUserErr != nil || botUser == nil {
-			p.API.LogError("Bot user not found or error", "error", botUserErr)
+			p.API.LogError("Bot user not found or error", "error", fmt.Sprintf("%v", botUserErr))
 			// Continue to fallback
 		} else {
 			// Get the direct channel between the bot and the approver
@@ -220,10 +220,14 @@ func (p *Plugin) sendDirectMessage(fromUserId, toUserId, title, description stri
 					return nil
 				}
 				
-				p.API.LogError("Failed to create post as bot, falling back to user", "error", postErr.Error())
+				if postErr != nil {
+					p.API.LogError("Failed to create post as bot, falling back to user", "error", fmt.Sprintf("%v", postErr))
+				} else {
+					p.API.LogError("Failed to create post as bot (nil error), falling back to user")
+				}
 			} else {
 				if botErr != nil {
-					p.API.LogError("Failed to get direct channel for bot, falling back to user", "error", botErr.Error())
+					p.API.LogError("Failed to get direct channel for bot, falling back to user", "error", fmt.Sprintf("%v", botErr))
 				} else {
 					p.API.LogError("Direct channel for bot is nil, falling back to user")
 				}
